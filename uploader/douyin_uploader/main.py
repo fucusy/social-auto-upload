@@ -12,13 +12,13 @@ from utils.log import douyin_logger
 
 async def cookie_auth(account_file):
     async with async_playwright() as playwright:
-        browser = await playwright.chromium.launch(headless=True)
+        browser = await playwright.chromium.launch(headless=True, channel="chrome")
         context = await browser.new_context(storage_state=account_file)
         context = await set_init_script(context)
         # 创建一个新的页面
         page = await context.new_page()
         # 访问指定的 URL
-        await page.goto("https://creator.douyin.com/creator-micro/content/upload")
+        await page.goto("https://creator.douyin.com/creator-micro/content/upload", timeout=60000)
         try:
             await page.wait_for_url("https://creator.douyin.com/creator-micro/content/upload", timeout=5000)
         except:
@@ -47,18 +47,16 @@ async def douyin_setup(account_file, handle=False):
 
 async def douyin_cookie_gen(account_file):
     async with async_playwright() as playwright:
-        options = {
-            'headless': False
-        }
         # Make sure to run headed.
-        browser = await playwright.chromium.launch(**options)
+        browser = await playwright.chromium.launch(channel="chrome", headless=False)
         # Setup context however you like.
         context = await browser.new_context()  # Pass any options
         context = await set_init_script(context)
         # Pause the page, and start recording manually.
         page = await context.new_page()
         await page.goto("https://creator.douyin.com/")
-        await page.pause()
+        second_20 = 20 * 1000
+        await page.wait_for_url("https://creator.douyin.com/creator-micro/home", timeout=second_20)
         # 点击调试器的继续，保存cookie
         await context.storage_state(path=account_file)
 
@@ -77,14 +75,16 @@ class DouYinVideo(object):
     async def set_schedule_time_douyin(self, page, publish_date):
         # 选择包含特定文本内容的 label 元素
         label_element = page.locator("[class^='radio']:has-text('定时发布')")
-        # 在选中的 label 元素下点击 checkbox
+        # # 在选中的 label 元素下点击 checkbox
         await label_element.click()
         await asyncio.sleep(1)
         publish_date_hour = publish_date.strftime("%Y-%m-%d %H:%M")
 
         await asyncio.sleep(1)
         await page.locator('.semi-input[placeholder="日期和时间"]').click()
-        await page.keyboard.press("Control+KeyA")
+        await page.keyboard.press("Meta+A")
+        # await page.keyboard.press("Delete")
+        print(publish_date_hour)
         await page.keyboard.type(str(publish_date_hour))
         await page.keyboard.press("Enter")
 
@@ -97,9 +97,9 @@ class DouYinVideo(object):
     async def upload(self, playwright: Playwright) -> None:
         # 使用 Chromium 浏览器启动一个浏览器实例
         if self.local_executable_path:
-            browser = await playwright.chromium.launch(headless=False, executable_path=self.local_executable_path)
+            browser = await playwright.chromium.launch(headless=False, channel="chrome", executable_path=self.local_executable_path)
         else:
-            browser = await playwright.chromium.launch(headless=False)
+            browser = await playwright.chromium.launch(headless=False, channel="chrome")
         # 创建一个浏览器上下文，使用指定的 cookie 文件
         context = await browser.new_context(storage_state=f"{self.account_file}")
         context = await set_init_script(context)
@@ -107,7 +107,7 @@ class DouYinVideo(object):
         # 创建一个新的页面
         page = await context.new_page()
         # 访问指定的 URL
-        await page.goto("https://creator.douyin.com/creator-micro/content/upload")
+        await page.goto("https://creator.douyin.com/creator-micro/content/upload", timeout=60000)
         douyin_logger.info(f'[+]正在上传-------{self.title}.mp4')
         # 等待页面跳转到指定的 URL，没进入，则自动等待到超时
         douyin_logger.info(f'[-] 正在打开主页...')
@@ -157,6 +157,21 @@ class DouYinVideo(object):
             await page.press(css_selector, "Space")
         douyin_logger.info(f'总共添加{len(self.tags)}个话题')
 
+        # 更换可见元素
+        await self.set_location(page, "北京市")
+
+        # 頭條/西瓜
+        third_part_element = '[class^="info"] > [class^="first-part"] div div.semi-switch'
+        # 定位是否有第三方平台
+        if await page.locator(third_part_element).count():
+            # 检测是否是已选中状态
+            if 'semi-switch-checked' not in await page.eval_on_selector(third_part_element, 'div => div.className'):
+                await page.locator(third_part_element).locator('input.semi-switch-native-control').click()
+
+        if self.publish_date != 0:
+            await self.set_schedule_time_douyin(page, self.publish_date)
+
+
         while True:
             # 判断重新上传按钮是否存在，如果不存在，代表视频正在上传，则等待
             try:
@@ -179,20 +194,7 @@ class DouYinVideo(object):
         #上传视频封面
         await self.set_thumbnail(page, self.thumbnail_path)
 
-        # 更换可见元素
-        await self.set_location(page, "杭州市")
-
-        # 頭條/西瓜
-        third_part_element = '[class^="info"] > [class^="first-part"] div div.semi-switch'
-        # 定位是否有第三方平台
-        if await page.locator(third_part_element).count():
-            # 检测是否是已选中状态
-            if 'semi-switch-checked' not in await page.eval_on_selector(third_part_element, 'div => div.className'):
-                await page.locator(third_part_element).locator('input.semi-switch-native-control').click()
-
-        if self.publish_date != 0:
-            await self.set_schedule_time_douyin(page, self.publish_date)
-
+        
         # 判断视频是否发布成功
         while True:
             # 判断视频是否发布成功
